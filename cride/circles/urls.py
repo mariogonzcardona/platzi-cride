@@ -1,10 +1,22 @@
 """Circle URLs."""
 
-from django.urls import path
+from django.urls import path,include
 
-from cride.circles.views import list_circles,create_circle
+# Django REST Framework
+from rest_framework.routers import DefaultRouter
 
-urlpatterns = [
-    path('circles/',list_circles),
-    path('circles/create/',create_circle)
+# Views
+from .views import circles as circle_views
+from .views import memberships as membership_views
+
+router=DefaultRouter()
+router.register(r'circles',circle_views.CircleViewSet,basename='circle')
+router.register(
+    r'circles/(?P<slug_name>[-a-zA-Z0-0_]+)/members',
+    membership_views.MembershipViewSet,
+    basename='membership'
+)
+
+urlpatterns=[
+    path('',include(router.urls))
 ]
