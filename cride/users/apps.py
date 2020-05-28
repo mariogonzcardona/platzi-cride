@@ -1,5 +1,11 @@
+"""Users app."""
+
+# Django
 from django.apps import AppConfig
 
-class UserAppConfig(AppConfig):
-    name='cride.users'
-    verbose_name='Users'
+
+class UsersAppConfig(AppConfig):
+    """Users app config."""
+
+    name = 'cride.users'
+    verbose_name = 'Users'

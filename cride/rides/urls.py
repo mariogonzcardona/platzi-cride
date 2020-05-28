@@ -1,4 +1,4 @@
-"""Users URLs."""
+"""Rides URLs."""
 
 # Django
 from django.urls import include, path
@@ -7,10 +7,14 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 # Views
-from .views import users as user_views
+from .views import rides as ride_views
 
 router = DefaultRouter()
-router.register(r'users', user_views.UserViewSet, basename='users')
+router.register(
+    r'circles/(?P<slug_name>[-a-zA-Z0-0_]+)/rides',
+    ride_views.RideViewSet,
+    basename='ride'
+)
 
 urlpatterns = [
     path('', include(router.urls))

@@ -1,4 +1,3 @@
- 
 """Circles permission classes."""
 
 # Django REST Framework

@@ -1,31 +1,33 @@
-"""Users Serializers"""
+"""Users serializers."""
 
 # Django
-from django.contrib.auth import (password_validation,authenticate)
-from django.core.validators import RegexValidator
-from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
-from django.utils import timezone
 from django.conf import settings
+from django.contrib.auth import password_validation, authenticate
+from django.core.validators import RegexValidator
+
 
 # Django REST Framework
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
 from rest_framework.authtoken.models import Token
+from rest_framework.validators import UniqueValidator
 
 # Models
-from cride.users.models import User
-from cride.users.models.profiles import Profile
+from cride.users.models import User, Profile
 
-# Utilities
-from datetime import timedelta
-import jwt
+# Task
+from cride.taskapp.task import send_confirmation_email
+
+# Serializers
 from cride.users.serializers.profiles import ProfileModelSerializer
 
-class UserModelSerializer(serializers.ModelSerializer):
-    """User model serializer"""
+# Utilities
+import jwt
 
-    profile=ProfileModelSerializer(read_only=True)
+
+class UserModelSerializer(serializers.ModelSerializer):
+    """User model serializer."""
+
+    profile = ProfileModelSerializer(read_only=True)
 
     class Meta:
         """Meta class."""
@@ -40,38 +42,16 @@ class UserModelSerializer(serializers.ModelSerializer):
             'profile'
         )
 
-class UserLoginSerializer(serializers.Serializer):
-    """Users login serializers
-    
-    Handle the login request data.
-    """
-
-    email=serializers.EmailField()
-    password=serializers.CharField(min_length=8,max_length=64)
-
-    def validate(self, data):
-        """Check credentials."""
-        user=authenticate(username=data['email'],password=data['password'])
-        if not user:
-            raise serializers.ValidationError('Invalid credentials')
-        if not user.is_verified:
-            raise serializers.ValidationError('Account is not active yet.')
-        self.context['user']=user
-        return data
-
-    def create(self,data):
-        """Generate or retrive new token"""
-        token,created=Token.objects.get_or_create(user=self.context['user'])
-        return self.context['user'], token.key
 
 class UserSignUpSerializer(serializers.Serializer):
-    """User sign up serializaer
-    Handle sing up data validation and user/profile creation.
+    """User sign up serializer.
+    Handle sign up data validation and user/profile creation.
     """
-    email=serializers.EmailField(
+
+    email = serializers.EmailField(
         validators=[UniqueValidator(queryset=User.objects.all())]
     )
-    username=serializers.CharField(
+    username = serializers.CharField(
         min_length=4,
         max_length=20,
         validators=[UniqueValidator(queryset=User.objects.all())]
@@ -85,74 +65,77 @@ class UserSignUpSerializer(serializers.Serializer):
     phone_number = serializers.CharField(validators=[phone_regex])
 
     # Password
-    password=serializers.CharField(min_length=8,max_length=64)
-    password_confirmation=serializers.CharField(min_length=8,max_length=64)
+    password = serializers.CharField(min_length=8, max_length=64)
+    password_confirmation = serializers.CharField(min_length=8, max_length=64)
 
     # Name
-    first_name=serializers.CharField(min_length=2,max_length=30)
-    last_name=serializers.CharField(min_length=2,max_length=30)
+    first_name = serializers.CharField(min_length=2, max_length=30)
+    last_name = serializers.CharField(min_length=2, max_length=30)
 
-    def validate(self,data):
-        """Verify password match."""
-        password=data['password']
-        password_confirm=data['password_confirmation']
-        if password!=password_confirm:
+    def validate(self, data):
+        """Verify passwords match."""
+        passwd = data['password']
+        passwd_conf = data['password_confirmation']
+        if passwd != passwd_conf:
             raise serializers.ValidationError("Passwords don't match.")
-        password_validation.validate_password(password)
+        password_validation.validate_password(passwd)
         return data
 
     def create(self, data):
-        """Handle user profile creation"""
+        """Handle user and profile creation."""
         data.pop('password_confirmation')
-        user=User.objects.create_user(**data,is_verified=False,is_client=True)
+        user = User.objects.create_user(**data, is_verified=False, is_client=True)
         Profile.objects.create(user=user)
-        self.send_confirmation_email(user)
+        send_confirmation_email.delay(user_pk=user.pk)
         return user
 
-    def send_confirmation_email(self, user):
-        """Send account verification link to give user"""
-        verification_token=self.gen_verification_token(user)
-        subject="Welcome @{}! Verify your account to start using Comparte Ride".format(user.username)
-        from_email='Comparte Ride <noreply@comparteride.com>'
-        content=render_to_string('emails/users/account_verification.html',
-            {'token':verification_token,'user':user}
-        )
-        
-        msg = EmailMultiAlternatives(subject, content, from_email, [user.email])
-        msg.attach_alternative(content, "text/html")
-        msg.send()
 
-    def gen_verification_token(self,user):
-        """Create JWT token that the user can use to verify its account."""
-        exp_date=timezone.now()+timedelta(days=3)
-        payload={
-            'user':user.username,
-            'exp':int(exp_date.timestamp()),
-            'type':"email_confirmation"
-        }
-        token=jwt.encode(payload,settings.SECRET_KEY,algorithm="HS256")
-        return token.decode()
+class UserLoginSerializer(serializers.Serializer):
+    """User login serializer.
+    Handle the login request data.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(min_length=8, max_length=64)
+
+    def validate(self, data):
+        """Check credentials."""
+        user = authenticate(username=data['email'], password=data['password'])
+        if not user:
+            raise serializers.ValidationError('Invalid credentials')
+        if not user.is_verified:
+            raise serializers.ValidationError('Account is not active yet :(')
+        self.context['user'] = user
+        return data
+
+    def create(self, data):
+        """Generate or retrieve new token."""
+        token, created = Token.objects.get_or_create(user=self.context['user'])
+        return self.context['user'], token.key
+
 
 class AccountVerificationSerializer(serializers.Serializer):
-    """Account verification serializer"""
-    token=serializers.CharField()
+    """Account verification serializer."""
 
-    def validate_token(self,data):
+    token = serializers.CharField()
+
+    def validate_token(self, data):
         """Verify token is valid."""
         try:
-            payload=jwt.decode(data,settings.SECRET_KEY,algorithms=['HS256'])
+            payload = jwt.decode(data, settings.SECRET_KEY, algorithms=['HS256'])
         except jwt.ExpiredSignatureError:
             raise serializers.ValidationError('Verification link has expired.')
         except jwt.PyJWTError:
-            raise serializers.ValidationError('Invalid Token')
-        if payload['type']!='email_confirmation':
-            raise serializers.ValidationError('Invalid Token')
-        self.context['payload']=payload
+            raise serializers.ValidationError('Invalid token')
+        if payload['type'] != 'email_confirmation':
+            raise serializers.ValidationError('Invalid token')
+
+        self.context['payload'] = payload
         return data
 
     def save(self):
         """Update user's verified status."""
-        payload=self.context['payload']
-        user=User.objects.get(username=payload['user'])
-        user.is_verified=True
+        payload = self.context['payload']
+        user = User.objects.get(username=payload['user'])
+        user.is_verified = True
         user.save()
